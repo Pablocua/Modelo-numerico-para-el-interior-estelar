@@ -9,12 +9,10 @@ from astropy.table import QTable
 from mpl_toolkits import mplot3d
 
 
-#El modelo
 
+#Variables: Define las constantes y los vectores necesarios para ir guardando los cálculos
 
-
-
-def resetear(R,L,T,x,y,M):
+def Variables(R,L,T,x,y,M):
     global X
     global Y
     global Z
@@ -59,7 +57,7 @@ def resetear(R,L,T,x,y,M):
     global Cm1
     global gen
 
-    gen=np.zeros(101)
+
 
     Lt=L
     Tc=T
@@ -121,7 +119,7 @@ def paso2(P,T,h,i):
     Pest[i]=P[i-1]+h*fP[i-1]+0.5*Delta1_P[i-1]+5*Delta2_P[i-1]/12
     Test[i]=T[i-1]+h*fT[i-1]+0.5*Delta1_T[i-1]
 
-#Paso3: Calcula la masa, su derivada y su diferencias. Como valores de entrada se necesita presion, temperatura, radio
+#Paso3: Calcula la masa, su derivada y sus diferencias. Como valores de entrada se necesita presion, temperatura, radio
 #paso de integración h y la capa i que se quiere calcular
 
 def paso3(P,T,r,h,i):
@@ -138,7 +136,7 @@ def paso4(M,r,h,i):
     Pcal[i]=Pcal[i-1]+h*fP[i]-0.5*Delta1_P[i]
 
 #Paso 7: Se recalcula la derivada de la temperatura con los valores estimados de temparatura y presión tomando
-#
+#la luminosidad de la capa anterior, el radio, el paso de integración y la capa i que se desea calcular
 
 def paso7(L,r,h,i):
     fT[i]=-Ct*(Pcal[i]**2)*L/((Test[i]**8.5)*(r[i])**2)
@@ -146,6 +144,7 @@ def paso7(L,r,h,i):
     Tcal[i]=Tcal[i-1]+h*fT[i]-0.5*Delta1_T[i]
 
 #Paso 6: Calcula la luminosidad y sus derivadas a partir de los parámetros de la generación de energía
+#además de la presión, temperatura, radio, paso de integración y capa i
 
 def paso6(P,T,r,eps1,nu,X2,h,i):
     fL[i]=0.01845*eps1*X1*X2*(10**nu)*(mu**2)*(P[i]**2)*(T[i]**(nu-2))*(r[i]**2)
@@ -163,13 +162,14 @@ def paso9(P,T,i):
 def error_rel(a,b):
     return abs((a-b)/b)
 
-#Paso2bis: Calcula la temperatura para la inntegraci
+#Paso2bis: Calcula la temperatura para la inntegración desde el centro
 
 def paso2bis(h,i):
     Delta1_T[i-1]=h*(fT[i-1]-fT[i-2])
     Test[i]=Tcal[i-1]+h*fT[i-1]+0.5*Delta1_T[i-1]
 
-#Paso polítropo: Se estima la presión a partir de la expresión del polítropo
+#Paso polítropo: Se estima la presión a partir de la expresión del polítropo utilizando la temperatura,
+#la constante k y la capa i
 
 def politropo(T,i,k):
     return k*(T[i]**2.5)
@@ -268,7 +268,7 @@ def capas_extra(Rt):
     r = np.linspace(0.9 * Rt, 0, 101)
     h = 0.9 * Rt / 100
     v = int((Rt - 0.9 * Rt) / h)
-    resetear(Rt, Lt, Tc, X, Y, Mt)
+    Variables(Rt, Lt, Tc, X, Y, Mt)
     i = 0
     r1 = np.zeros(v)
     while i < v:
@@ -499,10 +499,10 @@ def Error_total(P_ajust,T_ajust,L_ajust,M_ajust):
 #de la estrella. Realiza la interpolación lineal para la frontera calculando los errores relativos en ella.
 
 
-def Error_frontera(Rt,Lt,Tc,X,Y,M):
+def Error_frontera(Rt,Lt,Tc,X,Y,Mt):
 
     r, P, T, M, L, rho, gen, Fase, Ciclo, k, i, n = Integración_sup(Rt, Lt, Tc, X, Y, Mt)
-    r_c, P_c, T_c, M_c, L_c, gen_c, rho_c, Fase_c, ciclo_c = Integrqacion_cent(Rt, Lt, Tc, X, Y, Mt, k, i)
+    r_c, P_c, T_c, M_c, L_c, gen_c, rho_c, Fase_c, ciclo_c = Integracion_cent(Rt, Lt, Tc, X, Y, Mt, k, i)
 
     i=len(r)-2
     j=len(r_c)-2
@@ -524,9 +524,72 @@ def Error_frontera(Rt,Lt,Tc,X,Y,M):
 
     return Error,Error_P,Error_T,Error_M,Error_L,r_ajust,P_ajust,T_ajust,M_ajust,L_ajust
 
+#Integración sup: Ejecuta todas las funciones necesarias para el cálculo de las magnitudes hasta el centro
+#uniendo todos los resultados en vectores únicos.
 
-#Ajuste_T: realiza un ajuste de la temperatura central para un intervalo como variables de entrada, buscando el valor que minimiza el error
-# y guardando toda la información en un vector para posteriormente representar gráficamente el error
+def Integración_sup(Rt,Lt,Tc,X,Y,Mt):
+    Variables(Rt, Lt, Tc, X, Y, Mt)
+    i = 0
+    i, r, Pcal, Tcal, Mcal, Lcal, h, rho = Primerascapas_sup(i, Rt)
+    i, r, Pcal, Tcal, Mcal, Lcal, rho = Algoritmo_A11(i,r, h)
+    i, r, Pcal, Tcal, Mcal, Lcal, rho = Algoritmo_A12(i, r, h)
+    i, r, Pcal, Tcal, Mcal, Lcal, n, gen, rho, Fase, ciclo = Algoritmo_A13(i, r, h)
+
+    r1, P, T, M, L, Fase1, ciclo1, rho1, z, gen1 = capas_extra(Rt)
+
+    k = Pcal[i] / (Tcal[i] ** 2.5)
+
+    r=np.hstack((r1[0:z][::-1],r[0:i+1]))
+    n=np.hstack((np.zeros(z),n[0:i+1]))
+    P=np.hstack((P[0:z][::-1],Pcal[0:i+1]))
+    T=np.hstack((T[0:z][::-1],Tcal[0:i+1]))
+    M=np.hstack((M[0:z][::-1],Mcal[0:i+1]))
+    L=np.hstack((L[0:z][::-1],Lcal[0:i+1]))
+    rho=np.hstack((rho1[0:z][::-1],rho[0:i+1]))
+    gen=np.hstack((gen1[0:z][::-1],gen[0:i+1]))
+    Fase=np.hstack((Fase1[0:z][::-1],Fase[0:i+1]))
+    Ciclo=np.hstack((ciclo1[0:z][::-1],ciclo[0:i+1]))
+
+    return r,P,T,M,L,rho,gen,Fase,Ciclo,k,i,n
+
+#Integración cent: Ejecuta todas las funciones para calcular las magnitudes hasta la envoltura guardando los resultados
+#en vectores únicos para su posteior representación.
+
+def Integracion_cent(Rt,Lt,Tc,X,Y,Mt,k,i):
+    b=0
+    Variables(Rt,Lt,Tc,X,Y,Mt)
+    j, r, Pcal, Tcal, Mcal, Lcal, h, eps, rho = Primerascapas_cent(k, b, Tc, Rt)
+    j, r, Pcal, Tcal, Mcal, Lcal, gen, rho, Fase, ciclo = AlgoritmoA2_cent(r, k, h, j, 102 - i)
+
+    return r[0:j],Pcal[0:j],Tcal[0:j],Mcal[0:j],Lcal[0:j],gen[0:j],rho[0:j],Fase[0:j],ciclo[0:j]
+
+#Modelo completo: Une las soluciones de la integración desde la superficie y desde el centro en un único vector
+#para su posterior representación gráfica. Toma como variables de entrada los parámetros constantes y los valores
+#iniciales de radio, luminosidad y temperatura central.
+
+def Modelo_completo(Rt,Lt,Tc,X,Y,Mt):
+
+    r,P,T,M,L,rho,gen,Fase,Ciclo,k,i,n=Integración_sup(Rt,Lt,Tc,X,Y,Mt)
+    r_c,P_c,T_c,M_c,L_c,gen_c,rho_c,Fase_c,ciclo_c=Integracion_cent(Rt,Lt,Tc,X,Y,Mt,k,i)
+
+    rfinal=np.hstack((r[0:len(r)-1],r_c[0:len(r_c)-1][::-1]))
+    Pfinal=np.hstack((P[0:len(P)-1],P_c[0:len(P_c)-1][::-1]))
+    Tfinal=np.hstack((T[0:len(T)-1],T_c[0:len(T_c)-1][::-1]))
+    Mfinal=np.hstack((M[0:len(M)-1],M_c[0:len(M_c)-1][::-1]))
+    Lfinal=np.hstack((L[0:len(L)-1],L_c[0:len(L_c)-1][::-1]))
+    genfinal=np.hstack((gen[0:len(gen)-1],gen_c[0:len(gen_c)-1][::-1]))
+    rhofinal=np.hstack((rho[0:len(rho)-1],rho_c[0:len(rho_c)-1][::-1]))
+    Fasefinal=np.hstack((Fase[0:len(Fase)-1],Fase_c[0:len(Fase_c)-1][::-1]))
+    Ciclofinal=np.hstack((Ciclo[0:len(Ciclo)-1],ciclo_c[0:len(ciclo_c)-1][::-1]))
+    nfinal=np.hstack((n[0:len(n)-1],np.zeros(len(r_c)-1)))
+
+
+    return rfinal,Pfinal,Tfinal,Mfinal,Lfinal,genfinal,rhofinal,Fasefinal,Ciclofinal,nfinal
+
+
+#Ajuste_T: realiza un ajuste de la temperatura central para un intervalo de temperaturas siendo prec, el paso entre una tempertura y la siguiente
+# como variables de entrada, buscando el valor que minimiza el error y guardando toda la información en un vector
+# para posteriormente representar gráficamente el error
 
 def Ajuste_T(Rt,Lt,Tc_min,Tc_max,prec,X,Y,Mt):
     valor_minimo = Error_frontera(Rt, Lt, Tc,X,Y,Mt)[0]
@@ -559,7 +622,6 @@ def Ajuste_total(Rt_min,Rt_max,Lt_min,Lt_max,Tc_min,Tc_max,prec_R,prec_L,prec_T,
     valor_minimo=Error_frontera(Rt_min,Lt_min,Tc_min,X,Y,Mt)[0]
     v=int((Rt_max-Rt_min)/prec_R)+1
     w=int((Lt_max-Lt_min)/prec_L)+1
-    print(v,w)
     Error=np.zeros((v,w))
     T=np.zeros((v,w))
     R=np.zeros(v)
@@ -578,7 +640,6 @@ def Ajuste_total(Rt_min,Rt_max,Lt_min,Lt_max,Tc_min,Tc_max,prec_R,prec_L,prec_T,
             Ajuste=Ajuste_T(R[i],L[j],Tc_min,Tc_max,prec_T,X,Y,Mt)
             Error[i,j]=Ajuste[0]
             T[i,j]=Ajuste[1]
-            print(R[i], L[j],Error[i,j],T[i,j])
             if Error[i,j]<valor_minimo:
                 valor_minimo=Error[i,j]
                 Rt_del_min=R[i]
@@ -590,8 +651,8 @@ def Ajuste_total(Rt_min,Rt_max,Lt_min,Lt_max,Tc_min,Tc_max,prec_R,prec_L,prec_T,
         i=i+1
     return valor_minimo,Rt_del_min,Lt_del_min,Tc_del_min,R,L,Error,T1,Error1
 
-#Ejecución: Se ejecuta el modelo completo y mostrando los resultados en una tabla.
-#También se encarga de unir todas las soluciones en vectores únicos para su posterior representación gráfica
+#Ejecución: Se ejecuta el modelo completo y mostrando los resultados en una tabla. Representa los valores en la frontera para
+#las dos integraciones junto con el error relativo entre ellas
 
 def Ejecucion(Rt,Lt,Tc,X,Y,Mt):
 
@@ -606,7 +667,7 @@ def Ejecucion(Rt,Lt,Tc,X,Y,Mt):
 
 
     Error,Error_P,Error_T,Error_M,Error_L,r_ajust,P_ajust,T_ajust,M_ajust,L_ajust=Error_frontera(Rt, Lt, Tc,X,Y,Mt)
-    print(Error_P)
+
     print("\nValores en la frontera")
     table = [[ "Superficie ",np.around(r_ajust,decimals=5), P_ajust[0], T_ajust[0], M_ajust[0], L_ajust[0]],
              [ "Centro ",np.around(r_ajust,decimals=5), P_ajust[1], T_ajust[1], M_ajust[1], L_ajust[1]],
@@ -618,7 +679,6 @@ def Ejecucion(Rt,Lt,Tc,X,Y,Mt):
     print(tabulate(table, headers=["r", "P", "T", "M", "L"]))
     print("\nError relativo total en la frontera:      ", np.around(Error,decimals=5) * 100,'%')
 
-
 #Gráficas Error: Se representan graficamente los errores relativos en la frontera tras haber realizado el ajuste
 #de los valores iniciales.
 
@@ -629,17 +689,19 @@ def Graficas_Error(Rt_min,Rt_max,Lt_min,Lt_max,Tc_min,Tc_max,prec_R,prec_L,prec_
     print(tabulate(table))
     ax=plt.axes()
     plt.plot(A[7],A[8])
-    ax.set_xlabel('Temperatura')
-    ax.set_ylabel('Error')
-    plt.title('T que minimiza el error')
+    ax.set_xlabel('Temperatura ($10^{7}$ K)',fontsize=15)
+    ax.set_ylabel('Error',fontsize=15)
+    plt.title('T que minimiza el error',fontsize=15)
     fig = plt.figure()
     X,Y=np.meshgrid(A[4],A[5])
     ax = plt.axes(projection='3d')
     surf = ax.plot_surface(X, Y, A[6], cmap = 'plasma', linewidth = 0, antialiased = True)
-    plt.title('Error mínimo')
-    ax.set_xlabel('Rt')
-    ax.set_ylabel('Lt')
-    ax.set_zlabel('Error')
+    plt.title('Error mínimo',fontsize=12)
+    ax.set_xticks([11.6,11.7,11.8,11.9,12])
+    ax.set_yticks([48,49,50,51,52])
+    ax.set_xlabel('Rt ($10^{10}$ cm)',fontsize=12)
+    ax.set_ylabel('Lt ($10^{33}$ erg/s)',fontsize=12)
+    ax.set_zlabel('Error',fontsize=12)
     plt.show()
 
     return A[1],A[2],A[3]
@@ -661,7 +723,7 @@ def Graficas_variables(Rt,Lt,Tc,X,Y,Mt):
 
 
     plt.plot(r,rho,color='magenta')
-    plt.title('Solucción para la densidad',fontsize=15)
+    plt.title('Solución para la densidad',fontsize=15)
     plt.xlabel('Radio ($10^{10} cm$)',fontsize=15)
     plt.ylabel('Densidad (g/$cm^{3}$)',fontsize=15)
     plt.show()
@@ -727,19 +789,20 @@ def Graficas_variables(Rt,Lt,Tc,X,Y,Mt):
         i=i+1
 
 
-    plt.yticks([0,0.5,1],['--','PP','CNO'])
+    plt.yticks([0,0.5,1],['--','PP','CN'])
 
     line1,=plt.plot(r[0:110], gen[0:110]/gen[108])
     line2,=plt.plot(r[0:109], Ciclo[0:109])
     plt.title('Ritmo de generación de energía',fontsize=15)
-    plt.xlabel('Radio ($10^{10}) cm$',fontsize=15)
-    plt.legend((line1,line2),('Ritmo de generación de energía','Reacción nuclear'))
+    plt.xlabel('Radio ($10^{10} cm$)',fontsize=15)
+    plt.legend((line1,line2),('Ritmo de generación de energía','Reacción nuclear'),fontsize=12)
+
 
     plt.show()
 
 #Variación X: Estudia como cambian los soluciones al variar X junto con sus representaciones gráficas.
 #La función va variando la X, empezando en X_min hasta X_max con un paso entre un valor y el siguiente de
-#prec_X. El e
+#prec_X.
 
 def Variacion_X(X_min,X_max,prec_X,Y,Mt,Rt,Lt,Tc):
     v=int((X_max-X_min)/prec_X)+1
@@ -760,18 +823,17 @@ def Variacion_X(X_min,X_max,prec_X,Y,Mt,Rt,Lt,Tc):
     while i<v:
         X[i]=X[i-1]+prec_X
         X[0] = X_min
-        t=Ajuste_total(10,12.5,20,140,1.7,2.1,0.5,5,0.01,X[i],Y,Mt)
+        t=Ajuste_total(10,12.5,20,140,1.7,2.1,0.1,1,0.01,X[i],Y,Mt)
         E=Modelo_completo(t[1],t[2],t[3],X[i],Y,Mt)
-        Fase.append(E[0])
-        Ciclo.append(E[1])
-        r.append(E[3])
-        P.append(E[4])
-        T.append(E[5])
-        M.append(E[6])
-        L.append(E[7])
-        energia.append(E[8])
-        rho.append(E[9])
-        e[i]=Error
+        r.append(E[0])
+        P.append(E[1])
+        T.append(E[2])
+        M.append(E[3])
+        L.append(E[4])
+        energia.append(E[5])
+        rho.append(E[6])
+        Fase.append(E[7])
+        Ciclo.append(E[8])
         Z[i]=np.around((1-X[i]-Y),decimals=3)
         i=i+1
 
@@ -790,10 +852,10 @@ def Variacion_X(X_min,X_max,prec_X,Y,Mt,Rt,Lt,Tc):
         i = i + 1
 
 
-    plt.xlabel('Radio ($10^{10} cm$',fontsize=15)
+    plt.xlabel('Radio ($10^{10} cm$)',fontsize=15)
     plt.ylabel('Presión ($10^{15}$ din $cm^{2}$)',fontsize=15)
     plt.title('Variación de la presión en función de X',fontsize=15)
-    plt.legend((X[0], X[1], X[2]))
+    plt.legend((X[0], X[1], X[2]),fontsize=15)
     plt.show()
 
     i = 0
@@ -801,10 +863,10 @@ def Variacion_X(X_min,X_max,prec_X,Y,Mt,Rt,Lt,Tc):
         plt.plot(r[i], rho[i])
         i = i + 1
 
-    plt.xlabel('Radio ($10^{10} cm$',fontsize=15)
+    plt.xlabel('Radio ($10^{10} cm$)',fontsize=15)
     plt.ylabel('Densidad (g/$cm^{3}$)',fontsize=15)
     plt.title('Variación de la densidad en función de X',fontsize=15)
-    plt.legend((X[0], X[1], X[2]))
+    plt.legend((X[0], X[1], X[2]),fontsize=15)
     plt.show()
 
 
@@ -813,10 +875,10 @@ def Variacion_X(X_min,X_max,prec_X,Y,Mt,Rt,Lt,Tc):
         plt.plot(r[i],T[i])
         i=i+1
 
-    plt.xlabel('Radio ($10^{10} cm$',fontsize=15)
+    plt.xlabel('Radio ($10^{10} cm$)',fontsize=15)
     plt.ylabel('Temperatura ($10^{7}$ K)',fontsize=15)
     plt.title('Variación de la temperatura en función de X',fontsize=15)
-    plt.legend((X[0], X[1], X[2]))
+    plt.legend((X[0], X[1], X[2]),fontsize=15)
     plt.show()
 
     i=0
@@ -824,10 +886,10 @@ def Variacion_X(X_min,X_max,prec_X,Y,Mt,Rt,Lt,Tc):
         plt.plot(r[i],M[i])
         i=i+1
 
-    plt.xlabel('Radio ($10^{10} cm$',fontsize=15)
+    plt.xlabel('Radio ($10^{10} cm$)',fontsize=15)
     plt.ylabel('Masa ($10^{33}$ g)',fontsize=15)
     plt.title('Variación de la masa en función de X',fontsize=15)
-    plt.legend((X[0], X[1], X[2]))
+    plt.legend((X[0], X[1], X[2]),fontsize=15)
     plt.show()
 
     i=0
@@ -835,10 +897,10 @@ def Variacion_X(X_min,X_max,prec_X,Y,Mt,Rt,Lt,Tc):
         plt.plot(r[i],L[i])
         i=i+1
 
-    plt.xlabel('Radio ($10^{10} cm$',fontsize=15)
+    plt.xlabel('Radio ($10^{10} cm$)',fontsize=15)
     plt.ylabel('Luminosidad ($10^{33}$ erg/s)',fontsize=15)
     plt.title('Variación de la luminosidad en función de X',fontsize=15)
-    plt.legend((X[0], X[1], X[2]))
+    plt.legend((X[0], X[1], X[2]),fontsize=15)
     plt.show()
 
     i=0
@@ -846,10 +908,10 @@ def Variacion_X(X_min,X_max,prec_X,Y,Mt,Rt,Lt,Tc):
         plt.plot(r[i][0:110],Ciclo[i][0:110])
         i=i+1
 
-    plt.xlabel('Radio ($10^{10} cm$',fontsize=15)
-    plt.ylabel('Ciclo',fontsie=15)
+    plt.xlabel('Radio ($10^{10} cm$)',fontsize=15)
+    plt.ylabel('Ciclo',fontsize=15)
     plt.title('Variación del ciclo en función de X',fontsize=15)
-    plt.legend((X[0], X[1], X[2]))
+    plt.legend((X[0], X[1], X[2]),fontsize=15)
     plt.show()
 
     i=0
@@ -857,10 +919,10 @@ def Variacion_X(X_min,X_max,prec_X,Y,Mt,Rt,Lt,Tc):
         plt.plot(r[i],Fase[i])
         i=i+1
 
-    plt.xlabel('Radio ($10^{10} cm$',fontsize=15)
+    plt.xlabel('Radio ($10^{10} cm$)',fontsize=15)
     plt.ylabel('Fase',fontsize=15)
     plt.title('Variación de la fase en función de X',fontsize=15)
-    plt.legend((X[0], X[1], X[2]))
+    plt.legend((X[0], X[1], X[2]),fontsize=15)
     plt.show()
 
     i=0
@@ -870,17 +932,18 @@ def Variacion_X(X_min,X_max,prec_X,Y,Mt,Rt,Lt,Tc):
 
 
     f=('Z=',Z[0])
-    plt.xlabel('Radio ($10^{10} cm$',fontsize=15)
-    plt.ylabel('Gen de energía $erg$ $g^{-1}$ $ $s^{-1}$',fontsize=15 )
+    plt.xlabel('Radio ($10^{10} cm$)',fontsize=15)
+    plt.ylabel('Gen de energía ($erg$ $g^{-1}$  $s^{-1}$)',fontsize=15 )
     plt.title('Variación de generación de energía en función de Z',fontsize=15)
-    plt.legend(('Z=0.08','Z=0.05','Z=0.02'))
+    plt.legend(('Z=0.08','Z=0.05','Z=0.02'),fontsize=15)
     plt.show()
 
 
     # return X,G,f[3],P,T,L,M
 
 #Variación Y: Estudia como cambian los soluciones al variar Y junto con sus representaciones gráficas.
-#Como valores de entradas toma la Y mínima con la que se quiere comenzar a probar
+#Como valores de entradas toma empezando en Y_min hasta Y_max con un paso entre un valor y el siguiente de
+#prec_Y.
 
 def Variacion_Y(Y_min,Y_max,prec_Y,X,Mt,Rt,Lt,Tc):
     v = int((Y_max - Y_min) / prec_Y) + 1
@@ -893,34 +956,36 @@ def Variacion_Y(Y_min,Y_max,prec_Y,X,Mt,Rt,Lt,Tc):
     Ciclo = []
     Fase=[]
     energia=[]
+    rho=[]
     r=[]
     Z=np.zeros(v)
     i = 0
     while i < v:
         Y[i] = Y[i - 1] + prec_Y
         Y[0] = Y_min
-        t = Ajuste_total(11, 13, 20, 140, 1.5, 2.1, 0.5, 5, 0.01, X, Y[i], Mt)
-        f = Modelo_completo(t[1], t[2], t[3], X, Y[i], Mt)
-        P.append(f[4])
-        T.append(f[5])
-        M.append(f[6])
-        L.append(f[7])
-        energia.append(f[8])
-        Ciclo.append(f[1])
-        Fase.append(f[0])
-        r.append(f[3])
+        t = Ajuste_total(11, 13, 20, 140, 1.5, 2.1, 0.1, 1, 0.01, X, Y[i], Mt)
+        E = Modelo_completo(t[1], t[2], t[3], X, Y[i], Mt)
+        r.append(E[0])
+        P.append(E[1])
+        T.append(E[2])
+        M.append(E[3])
+        L.append(E[4])
+        energia.append(E[5])
+        rho.append(E[6])
+        Fase.append(E[7])
+        Ciclo.append(E[8])
         Z[i]=np.around((1-X-Y[i]),decimals=3)
         i = i + 1
 
     i = 0
     while i < len(P):
-        plt.plot(f[3], P[i])
+        plt.plot(r[i], P[i])
         i = i + 1
 
-    plt.xlabel('Radio ($10^{10} cm$', fontsize=15)
+    plt.xlabel('Radio ($10^{10} cm$)', fontsize=15)
     plt.ylabel('Presión ($10^{15}$ din $cm^{2}$)',fontsize=15)
     plt.title('Variación de la presión en función de Y',fontsize=15)
-    plt.legend((Y[0], Y[1], Y[2]))
+    plt.legend((Y[0], Y[1], Y[2]),fontsize=15)
     plt.show()
 
     i = 0
@@ -928,10 +993,10 @@ def Variacion_Y(Y_min,Y_max,prec_Y,X,Mt,Rt,Lt,Tc):
         plt.plot(r[i], T[i])
         i = i + 1
 
-    plt.xlabel('Radio ($10^{10} cm$', fontsize=15)
+    plt.xlabel('Radio ($10^{10} cm$)', fontsize=15)
     plt.ylabel('Temperatura ($10^{7}$ K)', fontsize=15)
     plt.title('Variación de la temperatura en función de Y',fontsize=15)
-    plt.legend((Y[0], Y[1], Y[2]))
+    plt.legend((Y[0], Y[1], Y[2]),fontsize=15)
     plt.show()
 
     i = 0
@@ -939,10 +1004,10 @@ def Variacion_Y(Y_min,Y_max,prec_Y,X,Mt,Rt,Lt,Tc):
         plt.plot(r[i], M[i])
         i = i + 1
 
-    plt.xlabel('Radio')
-    plt.ylabel('Masa')
-    plt.title('Variación de la masa en función de Y')
-    plt.legend((Y[0], Y[1], Y[2]))
+    plt.xlabel('Radio ($10^{10} cm$)', fontsize=15)
+    plt.ylabel('Masa ($10^{33}$ g)', fontsize=15)
+    plt.title('Variación de la masa en función de Y', fontsize=15)
+    plt.legend((Y[0], Y[1], Y[2]),fontsize=15)
     plt.show()
 
     i = 0
@@ -950,10 +1015,10 @@ def Variacion_Y(Y_min,Y_max,prec_Y,X,Mt,Rt,Lt,Tc):
         plt.plot(r[i], L[i])
         i = i + 1
 
-    plt.xlabel('Radio')
-    plt.ylabel('Luminosidad')
-    plt.title('Variación de la luminosidad en función de Y')
-    plt.legend((Y[0], Y[1], Y[2]))
+    plt.xlabel('Radio ($10^{10} cm$)', fontsize=15)
+    plt.ylabel('Luminosidad ($10^{33}$ erg/s)', fontsize=15)
+    plt.title('Variación de la luminosidad en función de Y', fontsize=15)
+    plt.legend((Y[0], Y[1], Y[2]),fontsize=12)
     plt.show()
 
     i = 0
@@ -961,10 +1026,10 @@ def Variacion_Y(Y_min,Y_max,prec_Y,X,Mt,Rt,Lt,Tc):
         plt.plot(r[i][0:108], Ciclo[i][0:108])
         i = i + 1
 
-    plt.xlabel('Radio')
-    plt.ylabel('Ciclo')
-    plt.title('Variación del ciclo en función de Y')
-    plt.legend((Y[0], Y[1], Y[2]))
+    plt.xlabel('Radio ($10^{10} cm$)', fontsize=15)
+    plt.ylabel('Ciclo', fontsize=15)
+    plt.title('Variación del ciclo en función de X', fontsize=15)
+    plt.legend((Y[0], Y[1], Y[2]),fontsize=15)
     plt.show()
 
     i = 0
@@ -972,10 +1037,10 @@ def Variacion_Y(Y_min,Y_max,prec_Y,X,Mt,Rt,Lt,Tc):
         plt.plot(r[i], Fase[i])
         i = i + 1
 
-    plt.xlabel('Radio')
-    plt.ylabel('Fase')
-    plt.title('Variación de la fase en función de Y')
-    plt.legend((Y[0], Y[1], Y[2]))
+    plt.xlabel('Radio ($10^{10} cm$)', fontsize=15)
+    plt.ylabel('Fase', fontsize=15)
+    plt.title('Variación de la fase en función de Y', fontsize=15)
+    plt.legend((Y[0], Y[1], Y[2]),fontsize=15)
     plt.show()
 
     i = 0
@@ -983,15 +1048,16 @@ def Variacion_Y(Y_min,Y_max,prec_Y,X,Mt,Rt,Lt,Tc):
         plt.plot(r[i][0:110], energia[i][0:110])
         i = i + 1
 
-    plt.xlabel('Radio')
-    plt.ylabel('Gen de energía')
-    plt.title('Variación de generación de energía en función de Y')
-    plt.legend((Z[0], Z[1], Z[2]))
+    plt.xlabel('Radio ($10^{10} cm$)', fontsize=15)
+    plt.ylabel('Gen de energía ($erg$ $g^{-1}$ $s^{-1}$)', fontsize=15)
+    plt.title('Variación de generación de energía en función de Z', fontsize=15)
+    plt.legend(('Z=0.08', 'Z=0.05', 'Z=0.02'))
+    plt.legend(('Z=0.08','Z=0.05','Z=0.02'),fontsize=15)
     plt.show()
 
     # return Y, G, f[3], P, T, L, M
 
-#Variación M: Estudia como cambian los soluciones al variar M junto con sus representaciones gráficas
+#Variación M: Estudia como cambian los soluciones al variar M representandolas gráficamente.
 
 def Variacion_M(M_min,M_max,prec_M,Rt,Lt,Tc,X,Y):
     v=int((M_max-M_min)/prec_M)+1
@@ -1010,18 +1076,17 @@ def Variacion_M(M_min,M_max,prec_M,Rt,Lt,Tc,X,Y):
     while i<v:
         M[i]=M[i-1]+prec_M
         M[0]=M_min
-
-        t = Ajuste_total(10, 13, 25, 100, 1.5, 2, 0.5, 5, 0.01, X, Y, M[i])
-        f=Ejecucion(t[1],t[2],t[3],X,Y,M[i])
-        P.append(f[4])
-        T.append(f[5])
-        L.append(f[7])
-        m.append(f[6])
-        energia.append(f[8])
-        Fase.append(f[0])
-        Ciclo.append(f[1])
-        r.append(f[3])
-        rho.append(f[9])
+        t = Ajuste_total(9, 13, 20, 100, 1.5, 2, 0.1, 1, 0.01, X, Y, M[i])
+        f=Modelo_completo(t[1], t[2], t[3], X, Y, M[i])
+        r.append(f[0])
+        P.append(f[1])
+        T.append(f[2])
+        m.append(f[3])
+        L.append(f[4])
+        energia.append(f[5])
+        rho.append(f[6])
+        Fase.append(f[7])
+        Ciclo.append(f[8])
         i=i+1
 
 
@@ -1030,10 +1095,10 @@ def Variacion_M(M_min,M_max,prec_M,Rt,Lt,Tc,X,Y):
         plt.plot(r[i], P[i])
         i = i + 1
 
-    plt.xlabel('Radio')
-    plt.ylabel('Presión')
-    plt.title('Variación de la presión en función de M')
-    plt.legend(( M[0], M[1], M[2]))
+    plt.xlabel('Radio ($10^{10} cm$)', fontsize=15)
+    plt.ylabel('Presión ($10^{15}$ $din$ $cm^{2}$)', fontsize=15)
+    plt.title('Variación de la presión en función de M', fontsize=15)
+    plt.legend(( M[0], M[1], M[2]),fontsize=15)
     plt.show()
 
     i = 0
@@ -1044,7 +1109,7 @@ def Variacion_M(M_min,M_max,prec_M,Rt,Lt,Tc,X,Y):
     plt.xlabel('Radio')
     plt.ylabel('Densidad')
     plt.title('Variación de la densidad en función de M')
-    plt.legend((M[0], M[1], M[2]))
+    plt.legend((M[0], M[1], M[2]),fontsize=15)
     plt.show()
 
     i = 0
@@ -1052,10 +1117,10 @@ def Variacion_M(M_min,M_max,prec_M,Rt,Lt,Tc,X,Y):
         plt.plot(r[i], T[i])
         i = i + 1
 
-    plt.xlabel('Radio')
-    plt.ylabel('Temperatura')
-    plt.title('Variación de la temperatura en función de M')
-    plt.legend((M[0],M[1],M[2]))
+    plt.xlabel('Radio ($10^{10} cm$)', fontsize=15)
+    plt.ylabel('Temperatura ($10^{7}$ K)', fontsize=15)
+    plt.title('Variación de la temperatura en función de M', fontsize=15)
+    plt.legend((M[0],M[1],M[2]),fontsize=15)
     plt.show()
 
     i = 0
@@ -1066,7 +1131,7 @@ def Variacion_M(M_min,M_max,prec_M,Rt,Lt,Tc,X,Y):
     plt.xlabel('Radio')
     plt.ylabel('Masa')
     plt.title('Variación de la masa en función de M')
-    plt.legend((M[0],M[1],M[2]))
+    plt.legend((M[0],M[1],M[2]),fontsize=15)
     plt.show()
 
     i = 0
@@ -1074,10 +1139,10 @@ def Variacion_M(M_min,M_max,prec_M,Rt,Lt,Tc,X,Y):
         plt.plot(r[i], L[i])
         i = i + 1
 
-    plt.xlabel('Radio')
-    plt.ylabel('Luminosidad')
-    plt.title('Variación de la luminosidad en función de M')
-    plt.legend((M[0],M[1],M[2]))
+    plt.xlabel('Radio ($10^{10} cm$)', fontsize=15)
+    plt.ylabel('Luminosidad ($10^{33}$ erg/s)', fontsize=15)
+    plt.title('Variación de la luminosidad en función de M', fontsize=15)
+    plt.legend((M[0],M[1],M[2]),fontsize=15)
     plt.show()
 
     i = 0
@@ -1085,10 +1150,10 @@ def Variacion_M(M_min,M_max,prec_M,Rt,Lt,Tc,X,Y):
         plt.plot(r[i][0:98], Ciclo[i][0:98])
         i = i + 1
 
-    plt.xlabel('Radio')
-    plt.ylabel('Ciclo')
-    plt.title('Variación del ciclo en función de M')
-    plt.legend((M[0], M[1],M[2]))
+    plt.xlabel('Radio ($10^{10} cm$)', fontsize=15)
+    plt.ylabel('Ciclo', fontsize=15)
+    plt.title('Variación del ciclo en función de M', fontsize=15)
+    plt.legend((M[0], M[1],M[2]),fontsize=15)
     plt.show()
 
     i = 0
@@ -1096,10 +1161,10 @@ def Variacion_M(M_min,M_max,prec_M,Rt,Lt,Tc,X,Y):
         plt.plot(r[i], Fase[i])
         i = i + 1
 
-    plt.xlabel('Radio')
-    plt.ylabel('Fase')
-    plt.title('Variación de la fase en función de M')
-    plt.legend((M[0],M[1],M[2]))
+    plt.xlabel('Radio ($10^{10} cm$)', fontsize=15)
+    plt.ylabel('Fase', fontsize=15)
+    plt.title('Variación de la fase en función de M', fontsize=15)
+    plt.legend((M[0],M[1],M[2]),fontsize=15)
     plt.show()
 
     i = 0
@@ -1107,108 +1172,71 @@ def Variacion_M(M_min,M_max,prec_M,Rt,Lt,Tc,X,Y):
         plt.plot(r[i][0:110], energia[i][0:110])
         i = i + 1
 
-    plt.xlabel('Radio')
-    plt.ylabel('Gen de energía')
-    plt.title('Variación de generación de energía en función de M')
-    plt.legend((M[0], M[1], M[2]))
+    plt.xlabel('Radio ($10^{10} cm$)',fontsize=15)
+    plt.ylabel('Gen de energía ($erg$ $g^{-1}$  $s^{-1}$)', fontsize=15)
+    plt.title('Variación de generación de energía en función de M',fontsize=15)
+    plt.legend((M[0], M[1], M[2]),fontsize=15)
     plt.show()
 
-#Variación R: representa el error relativo  total en función del radio con el que se comienza la integración
+#Variación R: representa el error relativo total en función del radio con el que se comienza la integración
 
 def Variacion_R(Rt,Lt,Tc,X,Y,Mt):
     Rm=np.linspace(0.95*Rt,Rt/0.9,200)
     Error=np.zeros(200)
-    nuevo=Modelo_Completo(Rm[0],Lt,Tc,X,Y,Mt)[0]
+    nuevo=Error_frontera(Rm[0],Lt,Tc,X,Y,Mt)[0]
     Rmin=0
     i=0
     while i<200:
-        Error[i]=Modelo_Completo(Rm[i],Lt,Tc,X,Y,Mt)[0]
+        Error[i]=Error_frontera(Rm[i],Lt,Tc,X,Y,Mt)[0]
         if Error[i]<nuevo:
             nuevo=Error[i]
             Rmin=Rm[i]*0.9
         i=i+1
     ax=plt.axes()
-    ax.set_xlabel('Radio de la estrella')
-    ax.set_ylabel('Error en la frontera')
-    plt.title('Variación del radio inicial')
+    ax.set_xlabel('Radio total ($10^{10}$ cm)',fontsize=15)
+    ax.set_ylabel('Error en la frontera',fontsize=15)
+    plt.title('Variación del radio inicial',fontsize=15)
     Rm = np.linspace(10.008,11.79, 200)
     plt.plot(Rm,Error)
     plt.show()
 
     return nuevo,Rmin
 
-#Integración sup:
 
-def Integración_sup(Rt,Lt,Tc,X,Y,Mt):
-    resetear(Rt, Lt, Tc, X, Y, Mt)
-    i = 0
-    i, r, Pcal, Tcal, Mcal, Lcal, h, rho = Primerascapas_sup(i, Rt)
-    i, r, Pcal, Tcal, Mcal, Lcal, rho = Algoritmo_A11(i,r, h)
-    i, r, Pcal, Tcal, Mcal, Lcal, rho = Algoritmo_A12(i, r, h)
-    i, r, Pcal, Tcal, Mcal, Lcal, n, gen, rho, Fase, ciclo = Algoritmo_A13(i, r, h)
+#Introducir los parámetros de composición química (X,Y) y masa total (Mt) y los valores iniciales de
+#Radio total, luminosidad total y temperatura central
 
-    r1, P, T, M, L, Fase1, ciclo1, rho1, z, gen1 = capas_extra(Rt)
-
-    k = Pcal[i] / (Tcal[i] ** 2.5)
-
-    r=np.hstack((r1[0:z][::-1],r[0:i+1]))
-    n=np.hstack((np.zeros(z),n[0:i+1]))
-    P=np.hstack((P[0:z][::-1],Pcal[0:i+1]))
-    T=np.hstack((T[0:z][::-1],Tcal[0:i+1]))
-    M=np.hstack((M[0:z][::-1],Mcal[0:i+1]))
-    L=np.hstack((L[0:z][::-1],Lcal[0:i+1]))
-    rho=np.hstack((rho1[0:z][::-1],rho[0:i+1]))
-    gen=np.hstack((gen1[0:z][::-1],gen[0:i+1]))
-    Fase=np.hstack((Fase1[0:z][::-1],Fase[0:i+1]))
-    Ciclo=np.hstack((ciclo1[0:z][::-1],ciclo[0:i+1]))
-
-    return r,P,T,M,L,rho,gen,Fase,Ciclo,k,i,n
+Rt=float(input('radio total'))
+Lt=float(input('luminosidad total'))
+Tc=float(input('temperatura central'))
+X=float(input('Composición de hidrógeno X'))
+Y=float(input('Composición de helio Y'))
+Mt=float(input('Masa total'))
 
 
-def Integrqacion_cent(Rt,Lt,Tc,X,Y,Mt,k,i):
-    b=0
-    resetear(Rt,Lt,Tc,X,Y,Mt)
-    j, r, Pcal, Tcal, Mcal, Lcal, h, eps, rho = Primerascapas_cent(k, b, Tc, Rt)
-    j, r, Pcal, Tcal, Mcal, Lcal, gen, rho, Fase, ciclo = AlgoritmoA2_cent(r, k, h, j, 102 - i)
+#Ejecución: Muestra los valores en una tabla
+Ejecucion(Rt,Lt,Tc,X,Y,Mt)
 
-    return r[0:j],Pcal[0:j],Tcal[0:j],Mcal[0:j],Lcal[0:j],gen[0:j],rho[0:j],Fase[0:j],ciclo[0:j]
+#Graficas variables: Representa gráficamente todas las soluciones
+Graficas_variables(Rt,Lt,Tc,X,Y,Mt)
 
-#Modelo completo: Une las soluciones de la integración desde la superficie y desde el centro en un único vector
-#para su posterior representación gráfica. Toma como variables de entrada los parámetros constantes y los valores
-#iniciales de radio, luminosidad y temperatura central.
+#Ajuste total: Si se desea ajustar los datos en la frontera, introducir intervalo de radios, luminosidad y temperatura
+#junto con el paso, prec_R, prec_L, prec_T, entre un valor y el siguiente. Si se introducen intervalos grandes con
+#precisiones pequeñas el cálculo puede llevar varias horas
 
-def Modelo_completo(Rt,Lt,Tc,X,Y,Mt):
-
-    r,P,T,M,L,rho,gen,Fase,Ciclo,k,i,n=Integración_sup(Rt,Lt,Tc,X,Y,Mt)
-    r_c,P_c,T_c,M_c,L_c,gen_c,rho_c,Fase_c,ciclo_c=Integrqacion_cent(Rt,Lt,Tc,X,Y,Mt,k,i)
-
-    rfinal=np.hstack((r[0:len(r)-1],r_c[0:len(r_c)-1][::-1]))
-    Pfinal=np.hstack((P[0:len(P)-1],P_c[0:len(P_c)-1][::-1]))
-    Tfinal=np.hstack((T[0:len(T)-1],T_c[0:len(T_c)-1][::-1]))
-    Mfinal=np.hstack((M[0:len(M)-1],M_c[0:len(M_c)-1][::-1]))
-    Lfinal=np.hstack((L[0:len(L)-1],L_c[0:len(L_c)-1][::-1]))
-    genfinal=np.hstack((gen[0:len(gen)-1],gen_c[0:len(gen_c)-1][::-1]))
-    rhofinal=np.hstack((rho[0:len(rho)-1],rho_c[0:len(rho_c)-1][::-1]))
-    Fasefinal=np.hstack((Fase[0:len(Fase)-1],Fase_c[0:len(Fase_c)-1][::-1]))
-    Ciclofinal=np.hstack((Ciclo[0:len(Ciclo)-1],ciclo_c[0:len(ciclo_c)-1][::-1]))
-    nfinal=np.hstack((n[0:len(n)-1],np.zeros(len(r_c)-1)))
+Rt_min=float(input('Radio mínimo'))
+Rt_max=float(input('Radio máximo'))
+prec_R=float(input('paso entre un radio y el siguiente'))
+Lt_min=float(input('Luminosidad mínimoa'))
+Lt_max=float(input('Luminosidad máxima'))
+prec_L=float(input('paso entre una luminosidad y la siguiente'))
+Tc_min=float(input('Temperatura mínima'))
+Tc_max=float(input('Temperatura máxima'))
+prec_T=float(input('paso entre una temperatura y la siguiente'))
 
 
-    return rfinal,Pfinal,Tfinal,Mfinal,Lfinal,genfinal,rhofinal,Fasefinal,Ciclofinal,nfinal
+Ajuste=Ajuste_total(Rt_min,Rt_max,Lt_min,Lt_max,Tc_min,Tc_max,prec_R,prec_L,prec_T,X,Y,Mt)
 
+Ejecucion(Ajuste[1],Ajuste[2],Ajuste[3],X,Y,Mt)
 
-
-X=0.75
-Y=0.2
-Mt=5.1
-Rt=11.793
-Lt=50.23
-Tc=1.8741
-
-# print(Ajuste_total(11.785,11.795,50.1,50.3,1.874,1.875,0.0001,0.001,0.0001,0.75,0.2,5.1))
-
-Rt=11.7949
-Lt=50.299
-Tc=1.8742
-
-Variacion_X(0.72,0.78,0.03,Y,Mt,Rt,Lt,Tc)
+Graficas_variables(Ajuste[1],Ajuste[2],Ajuste[3],X,Y,Mt)
